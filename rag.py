@@ -4,6 +4,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import HuggingFaceEndpoint
+from langchain.llms import HuggingFacePipeline
 from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
@@ -13,9 +14,11 @@ from langchain_core.messages import AIMessage, HumanMessage, get_buffer_string
 from langchain_core.runnables import RunnableParallel
 from langchain.schema import format_document
 from getpass import getpass
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from transformers import pipeline
 import os
 
-from constants import API_KEY_OPENAI
+# from constants import API_KEY_OPENAI
 
 path_db_files = "Database"
 HUGGINGFACEHUB_API_TOKEN = getpass()
@@ -31,12 +34,12 @@ def get_text_chunks(docs):
     return chunks
 
 def load_model(type):
-    if type == "openai":
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=API_KEY_OPENAI)
-    elif type == "huggingface":
+    # if type == "openai":
+        # embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=API_KEY_OPENAI)
+    if type == "huggingface":
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-            model_kwargs={'device':'cpu'}, 
+            model_kwargs={'device':'mps'}, 
             encode_kwargs={'normalize_embeddings': False},
         )
         #embeddings = HuggingFaceInferenceAPIEmbeddings(api_key=API_KEY_HUGGINGFACE, model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
@@ -80,17 +83,25 @@ def answer_question(query, db, model_type="huggingface"):
         """
     prompt = ChatPromptTemplate.from_template(template)
     
-    if model_type=="openai":
-        llm = OpenAI(openai_api_key=API_KEY_OPENAI)
-    elif model_type=="huggingface":
-        llm = HuggingFaceEndpoint(repo_id="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                task="text-generation", max_new_tokens= 512, top_k= 30, temperature= 0.1, repetition_penalty= 1.03)
+    # if model_type=="openai":
+    #     llm = OpenAI(openai_api_key=API_KEY_OPENAI)
+    # if model_type=="huggingface":
+    #     llm = HuggingFaceEndpoint(repo_id="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    #             task="text-generation", max_new_tokens= 512, top_k= 30, temperature= 0.1, repetition_penalty= 1.03)
         
+    model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2") 
+
+    # model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.2-8-bit-mlx")
+
+    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10, device="mps")
+
+    local_llm = HuggingFacePipeline(pipeline=pipe)
    
     rag_chain = (
             {"context": retriever | _combine_documents, "query": RunnablePassthrough()}
             | prompt
-            | llm
+            | local_llm
             | StrOutputParser()
     )
     
