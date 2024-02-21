@@ -17,6 +17,37 @@ from getpass import getpass
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from transformers import pipeline
 import os
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from langchain_core.language_models.llms import LLM
+from mlx_lm import load, generate
+from typing import Any, List, Mapping, Optional
+
+class CustomLLM(LLM):
+    n: int
+    model: Any
+    tokenizer: Any
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom"
+
+    def _call(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> str:
+        result = generate(self.model, self.tokenizer, prompt=prompt, verbose=False, max_tokens=200)
+        self.tokenizer.encode(result)
+        if stop is not None:
+            raise ValueError("stop kwargs are not permitted.")
+        return result
+
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get the identifying parameters."""
+        return {"n": self.n}
 
 # from constants import API_KEY_OPENAI
 
@@ -83,25 +114,13 @@ def answer_question(query, db, model_type="huggingface"):
         """
     prompt = ChatPromptTemplate.from_template(template)
     
-    # if model_type=="openai":
-    #     llm = OpenAI(openai_api_key=API_KEY_OPENAI)
-    # if model_type=="huggingface":
-    #     llm = HuggingFaceEndpoint(repo_id="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    #             task="text-generation", max_new_tokens= 512, top_k= 30, temperature= 0.1, repetition_penalty= 1.03)
-        
-    model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2") 
-
-    # model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.2-8-bit-mlx")
-
-    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10, device="mps")
-
-    local_llm = HuggingFacePipeline(pipeline=pipe)
+    model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.2-8-bit-mlx")
+    mlx_llm = CustomLLM(n=100, model=model, tokenizer=tokenizer)
    
     rag_chain = (
             {"context": retriever | _combine_documents, "query": RunnablePassthrough()}
             | prompt
-            | local_llm
+            | mlx_llm
             | StrOutputParser()
     )
     
