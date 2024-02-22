@@ -11,7 +11,7 @@ This API serves as a question-answering interface for questions on the german la
 
 <br />
 <div align="center">
-    <img src="Images/RAG.pdf" alt="Retrieval Augmented Generation" width="70%">
+    <img src="Images/RAG.png" alt="Retrieval Augmented Generation" width="80%">
 </div>
 <br/>
 
