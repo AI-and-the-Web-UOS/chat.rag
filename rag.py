@@ -4,6 +4,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import HuggingFaceEndpoint
+from langchain.llms import HuggingFacePipeline
 from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
@@ -13,9 +14,42 @@ from langchain_core.messages import AIMessage, HumanMessage, get_buffer_string
 from langchain_core.runnables import RunnableParallel
 from langchain.schema import format_document
 from getpass import getpass
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from transformers import pipeline
 import os
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from langchain_core.language_models.llms import LLM
+from mlx_lm import load, generate
+from typing import Any, List, Mapping, Optional
 
-from constants import API_KEY_OPENAI
+class CustomLLM(LLM):
+    n: int
+    model: Any
+    tokenizer: Any
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom"
+
+    def _call(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> str:
+        result = generate(self.model, self.tokenizer, prompt=prompt, verbose=False, max_tokens=200)
+        self.tokenizer.encode(result)
+        if stop is not None:
+            raise ValueError("stop kwargs are not permitted.")
+        return result
+
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get the identifying parameters."""
+        return {"n": self.n}
+
+# from constants import API_KEY_OPENAI
 
 path_db_files = "Database"
 HUGGINGFACEHUB_API_TOKEN = getpass()
@@ -31,12 +65,12 @@ def get_text_chunks(docs):
     return chunks
 
 def load_model(type):
-    if type == "openai":
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=API_KEY_OPENAI)
-    elif type == "huggingface":
+    # if type == "openai":
+        # embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=API_KEY_OPENAI)
+    if type == "huggingface":
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-            model_kwargs={'device':'cpu'}, 
+            model_kwargs={'device':'mps'}, 
             encode_kwargs={'normalize_embeddings': False},
         )
         #embeddings = HuggingFaceInferenceAPIEmbeddings(api_key=API_KEY_HUGGINGFACE, model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
@@ -80,17 +114,13 @@ def answer_question(query, db, model_type="huggingface"):
         """
     prompt = ChatPromptTemplate.from_template(template)
     
-    if model_type=="openai":
-        llm = OpenAI(openai_api_key=API_KEY_OPENAI)
-    elif model_type=="huggingface":
-        llm = HuggingFaceEndpoint(repo_id="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                task="text-generation", max_new_tokens= 512, top_k= 30, temperature= 0.1, repetition_penalty= 1.03)
-        
+    model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.2-8-bit-mlx")
+    mlx_llm = CustomLLM(n=100, model=model, tokenizer=tokenizer)
    
     rag_chain = (
             {"context": retriever | _combine_documents, "query": RunnablePassthrough()}
             | prompt
-            | llm
+            | mlx_llm
             | StrOutputParser()
     )
     
