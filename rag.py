@@ -21,6 +21,16 @@ from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from mlx_lm import load, generate
 from typing import Any, List, Mapping, Optional
+import json
+import datetime
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+path_db_files = "Database"
+HUGGINGFACEHUB_API_TOKEN = getpass()
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HUGGINGFACEHUB_API_TOKEN
+db = prep_vector_db(path_db_files)
 
 class CustomLLM(LLM):
     n: int
@@ -48,13 +58,6 @@ class CustomLLM(LLM):
     def _identifying_params(self) -> Mapping[str, Any]:
         """Get the identifying parameters."""
         return {"n": self.n}
-
-# from constants import API_KEY_OPENAI
-
-path_db_files = "Database"
-HUGGINGFACEHUB_API_TOKEN = getpass()
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = HUGGINGFACEHUB_API_TOKEN
-
 
 def get_text_chunks(docs):
     text_splitter = RecursiveCharacterTextSplitter(
@@ -129,7 +132,20 @@ def answer_question(query, db, model_type="huggingface"):
 
     return reply
 
-db = prep_vector_db(path_db_files)
-query = "Wie werden Arbeitsverträge bei Alt-Arbeitsverhältnissen geschlossen?"
-answers = answer_question(query, db)
-print(answers)
+@app.route('/query', methods=['POST'])
+def query_handler():
+    data = request.get_json()
+    if not data or 'message' not in data:
+        return jsonify({'error': 'Invalid request'}), 400
+
+    query = data['message']
+    answers = answer_question(query, db)
+    
+    message_content = answers
+    message_sender = "Harvey Specter"
+    message_timestamp = datetime.datetime.now().isoformat()
+    
+    return jsonify({'content':message_content, 'sender':message_sender, 'timestamp':message_timestamp}), 200
+
+if __name__ == "__main__":
+    app.run(port=5120, debug=True)
