@@ -23,7 +23,7 @@ CHANNEL_AUTHKEY = '0987654321'
 CHANNEL_NAME = "The One and Only Channel"
 CHANNEL_ENDPOINT = "http://localhost:5001" # don't forget to adjust in the bottom of the file
 CHANNEL_FILE = 'messages.json'
-RAG_ENDPOINT = "http://localhost:5120"
+RAG_ENDPOINT = "http://localhost:5120/query"
 
 @app.cli.command('register')
 def register_command():
@@ -87,6 +87,7 @@ def send_message():
     messages.append({'content':message['content'], 'sender':message['sender'], 'timestamp':message['timestamp']})
     
     response = requests.post(RAG_ENDPOINT, json={'content':message['content'], 'sender':message['sender'], 'timestamp':message['timestamp']})
+    response = response.json()
     messages.append({'content':response['content'], 'sender':response['sender'], 'timestamp':response['timestamp']})
     
     save_messages(messages)

@@ -30,7 +30,6 @@ app = Flask(__name__)
 path_db_files = "Database"
 HUGGINGFACEHUB_API_TOKEN = getpass()
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HUGGINGFACEHUB_API_TOKEN
-db = prep_vector_db(path_db_files)
 
 class CustomLLM(LLM):
     n: int
@@ -105,6 +104,29 @@ def _combine_documents(docs, document_prompt=PromptTemplate.from_template(templa
 
 def answer_question(query, db, model_type="huggingface"):
     print("Attempting to answer question.")
+    
+    # ERROR: requests.exceptions.ReadTimeout: (ReadTimeoutError("HTTPSConnectionPool(host='api-inference.huggingface.co', port=443): Read timed out. (read timeout=120)"), '(Request ID: d22641da-0283-4140-8b9f-6f43c809c96a)')
+    reply = rag_chain.invoke(query)
+
+    return reply
+
+@app.route('/query', methods=['POST'])
+def query_handler():
+    data = request.get_json()
+    if not data or 'content' not in data:
+        return jsonify({'error': 'Invalid request'}), 400
+
+    query = data['content']
+    answers = answer_question(query, db)
+    
+    message_content = answers
+    message_sender = "Harvey Specter"
+    message_timestamp = datetime.datetime.now().isoformat()
+    
+    return jsonify({'content':message_content, 'sender':message_sender, 'timestamp':message_timestamp}), 200
+
+if __name__ == "__main__":
+    db = prep_vector_db(path_db_files)
     retriever = db.as_retriever()
     
     template = """Du bist der deutsche Harvey Specter, ein berühmter aber arroganter Anwalt mit einem Faible für gute Filmzitate.
@@ -119,33 +141,11 @@ def answer_question(query, db, model_type="huggingface"):
     
     model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.2-8-bit-mlx")
     mlx_llm = CustomLLM(n=100, model=model, tokenizer=tokenizer)
-   
+
     rag_chain = (
             {"context": retriever | _combine_documents, "query": RunnablePassthrough()}
             | prompt
             | mlx_llm
             | StrOutputParser()
     )
-    
-    # ERROR: requests.exceptions.ReadTimeout: (ReadTimeoutError("HTTPSConnectionPool(host='api-inference.huggingface.co', port=443): Read timed out. (read timeout=120)"), '(Request ID: d22641da-0283-4140-8b9f-6f43c809c96a)')
-    reply = rag_chain.invoke(query)
-
-    return reply
-
-@app.route('/query', methods=['POST'])
-def query_handler():
-    data = request.get_json()
-    if not data or 'message' not in data:
-        return jsonify({'error': 'Invalid request'}), 400
-
-    query = data['message']
-    answers = answer_question(query, db)
-    
-    message_content = answers
-    message_sender = "Harvey Specter"
-    message_timestamp = datetime.datetime.now().isoformat()
-    
-    return jsonify({'content':message_content, 'sender':message_sender, 'timestamp':message_timestamp}), 200
-
-if __name__ == "__main__":
     app.run(port=5120, debug=True)
